@@ -1,0 +1,34 @@
+<?php require __DIR__.'/layout/start.php'; $draft=$interview['draft']; ?>
+<main class="interview-shell" data-interview data-csrf="<?=h(csrf_token())?>" data-company-id="<?=h($companyId??'')?>" data-application-id="<?=h($applicationId??'')?>">
+  <aside class="interview-sidebar">
+    <div class="interview-brand"><span class="eyebrow">INTERVIEW MODE</span><h1><?=h($interview['company']['name']??'共通面接モード')?></h1><span class="interview-clock" data-clock></span></div>
+    <form method="get" class="interview-selectors">
+      <label>企業<select class="field" name="company_id" onchange="this.form.submit()"><option value="">共通</option><?php foreach($companies as $row):?><option value="<?=$row['company_id']?>" <?=$companyId===$row['company_id']?'selected':''?>><?=h($row['name'])?></option><?php endforeach;?></select></label>
+      <label>応募案件<select class="field" name="application_id" onchange="this.form.submit()"><option value="">企業共通</option><?php foreach($allApplications as $row):?><?php if(!$companyId||$row['company_id']===$companyId):?><option value="<?=$row['application_id']?>" <?=$applicationId===$row['application_id']?'selected':''?>><?=h($row['title'])?></option><?php endif;?><?php endforeach;?></select></label>
+    </form>
+    <div class="interview-tools"><button class="button compact schedule-button" type="button" data-toggle-scheduler>日程調整</button><button class="button compact" type="button" data-toggle-prep>確認欄を隠す</button><button class="button compact" type="button" data-focus-note>メモ集中</button><a class="button compact" href="<?=$companyId?'company.php?id='.$companyId:'companyFile.php'?>">戻る</a></div>
+  </aside>
+  <section class="interview-main">
+    <div class="interview-columns">
+      <div class="prep-column" data-prep-column><div class="section-head"><h2>確認項目</h2><small>クリックで折りたたみ</small></div><?php foreach($interview['contents'] as $row):?><details class="interview-card" open><summary><span class="status"><?=h($row['category'])?></span><strong><?=h($row['title'])?></strong></summary><p><?=nl2br(h($row['body']))?></p></details><?php endforeach;?><?php if(!$interview['contents']):?><p class="empty">面接表示対象のコンテンツがありません。</p><?php endif;?></div>
+      <form method="post" class="live-note" data-finalize-form><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="finalize"><input type="hidden" name="draft_id" data-draft-id value="<?=h($draft['draft_id']??'')?>">
+        <div class="section-head"><h2>リアルタイムメモ</h2><span class="save-state" data-save-state>未保存</span></div>
+        <input class="field" name="title" data-draft-title value="<?=h($draft['title']??'面接ログ '.date('Y-m-d H:i'))?>">
+        <div class="note-tools"><button class="button compact" type="button" data-insert-time>時刻を挿入</button><button class="button compact" type="button" data-save-now>今すぐ保存</button><small>Ctrl + S でも保存</small></div>
+        <textarea class="field note-area" name="body" data-draft-body placeholder="面接中のメモを入力。数秒ごとに自動保存されます。"><?=h($draft['body']??'')?></textarea>
+        <button class="button primary full" type="submit">面接を終了してログ保存</button>
+      </form>
+    </div>
+  </section>
+  <aside class="interview-scheduler <?=$availabilitySearched?'open':''?>" data-scheduler aria-label="面接日程調整">
+    <div class="section-head"><div><span class="eyebrow">SCHEDULING</span><h2>候補日時をすぐ確認</h2></div><button class="icon-button" type="button" data-toggle-scheduler>×</button></div>
+    <form method="post" class="form-stack scheduler-form" data-scheduler-form><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="find_availability">
+      <div class="form-grid-2"><label>開始日<input class="field" type="date" name="date_from" value="<?=h(post_string('date_from')?:date('Y-m-d'))?>" required></label><label>終了日<input class="field" type="date" name="date_to" value="<?=h(post_string('date_to')?:date('Y-m-d',strtotime('+7 days')))?>" required></label><label>面接時間（分）<input class="field" type="number" name="duration" min="15" max="480" step="15" value="<?=h(post_string('duration')?:'60')?>" required></label><label>候補間隔<select class="field" name="interval"><?php $selectedInterval=post_string('interval')?:'30'; foreach(['15','30','60'] as $minutes):?><option value="<?=$minutes?>" <?=$selectedInterval===$minutes?'selected':''?>><?=$minutes?>分</option><?php endforeach;?></select></label><label>前に空ける時間<input class="field" type="number" name="buffer_before" min="0" max="180" step="5" value="<?=h(post_string('buffer_before')?:'15')?>"></label><label>後に空ける時間<input class="field" type="number" name="buffer_after" min="0" max="180" step="5" value="<?=h(post_string('buffer_after')?:'15')?>"></label><label>開始時刻<input class="field" type="time" name="work_start" value="<?=h(post_string('work_start')?:'09:00')?>" required></label><label>終了時刻<input class="field" type="time" name="work_end" value="<?=h(post_string('work_end')?:'18:00')?>" required></label></div>
+      <label class="check"><input type="checkbox" name="include_weekends" <?=isset($_POST['include_weekends'])?'checked':''?>> 土日も含める</label><button class="button primary full" type="submit">候補を表示</button>
+    </form>
+    <?php if($availabilitySearched):?><div class="scheduler-results"><div class="section-head"><h3>空いている日時</h3><?php if($availability):?><button class="button compact" type="button" data-copy-slots>候補をコピー</button><?php endif;?></div><p class="muted">確定予定・仮予定の両方を避けています。</p><?php if($availability):?><div class="interview-slot-list"><?php foreach($availability as $slot):?><button class="interview-slot" type="button" data-schedule-start="<?=h(str_replace(' ','T',substr($slot['start_at'],0,16)))?>" data-schedule-end="<?=h(str_replace(' ','T',substr($slot['end_at'],0,16)))?>" data-schedule-label="<?=h($slot['label'])?>"><strong><?=h($slot['label'])?></strong><small>仮予定に登録</small></button><?php endforeach;?></div><?php else:?><p class="empty">指定条件では空き時間がありません。</p><?php endif;?></div><?php endif;?>
+  </aside>
+</main>
+<dialog id="tentative-event-dialog" class="dialog compact-dialog"><form method="post" class="form-stack" data-tentative-form><div class="section-head"><h2>面接仮日程を登録</h2><button class="icon-button" type="button" data-dialog-close>×</button></div><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_tentative_event"><label>予定名<input class="field" name="title" value="<?=h(($interview['company']['name']??'').' 面接仮日程')?>" required></label><label>開始日時<input class="field" type="datetime-local" name="start_at" data-tentative-start required></label><label>終了日時<input class="field" type="datetime-local" name="end_at" data-tentative-end required></label><button class="button primary full" type="submit">仮予定として登録</button></form></dialog>
+<script src="assets/js/interview.js" defer></script>
+<?php require __DIR__.'/layout/end.php'; ?>

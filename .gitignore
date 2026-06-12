@@ -1,0 +1,39 @@
+# Local application data and secrets
+/Carrer_site_private/
+/config.php
+/.env
+/.env.*
+!/.env.example
+
+# Public diagnostics used only while troubleshooting
+/public/healthcheck.php
+/public/dashboardcheck.php
+
+# Local QA output and browser artifacts
+/tests/artifacts/public-qa/
+/tests/artifacts/guide-quick-access.png
+/tests/artifacts/guide-quick-access-mobile.png
+/tests/public_qa.mjs
+/playwright-report/
+/test-results/
+
+# Runtime files
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.pid
+*.tmp
+*.cache
+
+# Dependencies and editor files
+/vendor/
+/node_modules/
+/.idea/
+/.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
