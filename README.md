@@ -24,6 +24,8 @@
 - MySQL文字コード: `utf8mb4`
 - タイムゾーン: `Asia/Tokyo`
 
+DB構造: [database/ER_DIAGRAM.md](database/ER_DIAGRAM.md)
+
 ## セットアップ
 
 ### 1. データベースを作成する
