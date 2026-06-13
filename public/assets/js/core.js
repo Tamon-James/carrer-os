@@ -17,4 +17,12 @@ function syncResource(){
   document.querySelector('[data-external-field]')?.toggleAttribute('hidden',upload);
 }
 resourceType?.addEventListener('change',syncResource);syncResource();
-
+const stepType=document.querySelector('[data-step-type]');
+const stepTitle=document.querySelector('[data-step-title]');
+function syncStepTitle(){
+  if(!stepType||!stepTitle)return;
+  const briefing=stepType.value==='briefing';
+  stepTitle.required=!briefing;
+  stepTitle.placeholder=briefing?'説明会の場合は未入力でも登録できます':'ステップ名を入力してください';
+}
+stepType?.addEventListener('change',syncStepTitle);syncStepTitle();

@@ -27,11 +27,16 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
       flash('success','面接仮日程を登録しました。');
     } elseif ($action==='finalize') {
       $draftId=(int)post_id('draft_id');
-      if ($draftId<=0) $draftId=$repo->saveDraft($uid,$companyId,$applicationId,post_string('title')?:'面接ログ',post_string('body'));
+      if ($draftId<=0) $draftId=$repo->saveDraft($uid,$companyId,$applicationId,post_string('title')?:'セッションログ',post_string('body'));
       $repo->finalizeDraft($uid,$draftId);
-      flash('success','面接ログを保存しました。');
+      flash('success','セッションログを保存しました。');
+    } elseif ($action==='complete_tutorial') {
+      delete_tutorial_data($uid);
+      db()->prepare("UPDATE users SET tutorial_status='completed' WHERE user_id=?")->execute([$uid]);
+      flash('success','操作チュートリアルが完了しました。チュートリアル企業と関連データを削除しました。');
+      redirect('index.php');
     }
   } catch(Throwable $e) { flash('error',$e->getMessage()); }
   if($action!=='find_availability') redirect('campe.php'.($companyId?'?company_id='.$companyId.'&application_id='.(int)$applicationId:''));
 }
-render('interview',['page_title'=>'面接モード','active_nav'=>'interview','body_class'=>'interview-mode','interview'=>$repo->interview($uid,$companyId,$applicationId),'companies'=>$repo->companies($uid),'allApplications'=>$allApplications,'companyId'=>$companyId,'applicationId'=>$applicationId,'availability'=>$availability,'availabilitySearched'=>$availabilitySearched]);
+render('interview',['page_title'=>'セッションモード','active_nav'=>'interview','body_class'=>'interview-mode','interview'=>$repo->interview($uid,$companyId,$applicationId),'companies'=>$repo->companies($uid),'allApplications'=>$allApplications,'companyId'=>$companyId,'applicationId'=>$applicationId,'availability'=>$availability,'availabilitySearched'=>$availabilitySearched,'tutorialStage'=>qp('tutorial')]);

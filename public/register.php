@@ -11,9 +11,8 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
   else {
     try {
       $stmt=db()->prepare('INSERT INTO users (email,password_hash) VALUES (?,?)'); $stmt->execute([$email,password_hash($password,PASSWORD_DEFAULT)]);
-      app_start_session(); $_SESSION['user_id']=(int)db()->lastInsertId(); redirect('index.php');
+      app_start_session(); $_SESSION['user_id']=(int)db()->lastInsertId(); redirect('tutorial.php');
     } catch(PDOException) { $error='このメールアドレスは既に登録されています。'; }
   }
 }
 render('auth',['page_title'=>'ユーザー登録','mode'=>'register','error'=>$error]);
-

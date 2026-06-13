@@ -24,9 +24,14 @@ if (($_SERVER['REQUEST_METHOD']??'GET')==='POST') {
       'name'=>$name,'industry_id'=>post_id('industry_id'),'corporate_url'=>$url?:null,
       'business'=>post_string('business')?:null,'memo'=>post_string('memo')?:null,
     ]);
+    if (post_string('tutorial_stage')==='company') {
+      db()->prepare("INSERT INTO tutorial_records (user_id,entity_type,entity_id) VALUES (?,'company',?)")->execute([$uid,$id]);
+      flash('success','企業を登録しました。次は選考フローを追加します。');
+      redirect('company.php?id='.$id.'&tutorial=flow#flow');
+    }
     flash('success','企業を登録しました。');
     redirect('company.php?id='.$id);
   } catch(Throwable $e) { flash('error',$e->getMessage()); redirect('companyFile.php'); }
 }
-$q=qp('q');
-render('companies',['page_title'=>'企業・応募','active_nav'=>'companies','companies'=>$repo->companies($uid,$q),'masters'=>$repo->masters($uid),'q'=>$q]);
+$q=qp('q');$archived=qp('archived')==='1';
+render('companies',['page_title'=>$archived?'過去企業':'企業・応募','active_nav'=>'companies','companies'=>$repo->companies($uid,$q,$archived),'masters'=>$repo->masters($uid),'q'=>$q,'archived'=>$archived,'tutorialStage'=>qp('tutorial')]);

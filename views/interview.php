@@ -1,10 +1,10 @@
 <?php require __DIR__.'/layout/start.php'; $draft=$interview['draft']; ?>
 <main class="interview-shell" data-interview data-csrf="<?=h(csrf_token())?>" data-company-id="<?=h($companyId??'')?>" data-application-id="<?=h($applicationId??'')?>">
   <aside class="interview-sidebar">
-    <div class="interview-brand"><span class="eyebrow">INTERVIEW MODE</span><h1><?=h($interview['company']['name']??'共通面接モード')?></h1><span class="interview-clock" data-clock></span></div>
+    <div class="interview-brand"><span class="eyebrow">SESSION MODE</span><h1><?=h($interview['company']['name']??'共通セッションモード')?></h1><span class="interview-clock" data-clock></span></div>
     <form method="get" class="interview-selectors">
       <label>企業<select class="field" name="company_id" onchange="this.form.submit()"><option value="">共通</option><?php foreach($companies as $row):?><option value="<?=$row['company_id']?>" <?=$companyId===$row['company_id']?'selected':''?>><?=h($row['name'])?></option><?php endforeach;?></select></label>
-      <label>応募案件<select class="field" name="application_id" onchange="this.form.submit()"><option value="">企業共通</option><?php foreach($allApplications as $row):?><?php if(!$companyId||$row['company_id']===$companyId):?><option value="<?=$row['application_id']?>" <?=$applicationId===$row['application_id']?'selected':''?>><?=h($row['title'])?></option><?php endif;?><?php endforeach;?></select></label>
+      <label>応募案件<select class="field" name="application_id" onchange="this.form.submit()"><option value=""><?=$companyId?'企業内すべて':'共通メモのみ'?></option><?php foreach($allApplications as $row):?><?php if(!$companyId||$row['company_id']===$companyId):?><option value="<?=$row['application_id']?>" <?=$applicationId===$row['application_id']?'selected':''?>><?=h($row['title'])?></option><?php endif;?><?php endforeach;?></select></label>
     </form>
     <div class="interview-tools"><button class="button compact schedule-button" type="button" data-toggle-scheduler>日程調整</button><button class="button compact" type="button" data-toggle-prep>確認欄を隠す</button><button class="button compact" type="button" data-focus-note>メモ集中</button><a class="button compact" href="<?=$companyId?'company.php?id='.$companyId:'companyFile.php'?>">戻る</a></div>
   </aside>
@@ -13,10 +13,10 @@
       <div class="prep-column" data-prep-column><div class="section-head"><h2>確認項目</h2><small>クリックで折りたたみ</small></div><?php foreach($interview['contents'] as $row):?><details class="interview-card" open><summary><span class="status"><?=h($row['category'])?></span><strong><?=h($row['title'])?></strong></summary><p><?=nl2br(h($row['body']))?></p></details><?php endforeach;?><?php if(!$interview['contents']):?><p class="empty">面接表示対象のコンテンツがありません。</p><?php endif;?></div>
       <form method="post" class="live-note" data-finalize-form><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="finalize"><input type="hidden" name="draft_id" data-draft-id value="<?=h($draft['draft_id']??'')?>">
         <div class="section-head"><h2>リアルタイムメモ</h2><span class="save-state" data-save-state>未保存</span></div>
-        <input class="field" name="title" data-draft-title value="<?=h($draft['title']??'面接ログ '.date('Y-m-d H:i'))?>">
+        <input class="field" name="title" data-draft-title value="<?=h($draft['title']??'セッションログ '.date('Y-m-d H:i'))?>">
         <div class="note-tools"><button class="button compact" type="button" data-insert-time>時刻を挿入</button><button class="button compact" type="button" data-save-now>今すぐ保存</button><small>Ctrl + S でも保存</small></div>
-        <textarea class="field note-area" name="body" data-draft-body placeholder="面接中のメモを入力。数秒ごとに自動保存されます。"><?=h($draft['body']??'')?></textarea>
-        <button class="button primary full" type="submit">面接を終了してログ保存</button>
+        <textarea class="field note-area" name="body" data-draft-body data-tutorial-target="session-note" placeholder="面接中のメモを入力。数秒ごとに自動保存されます。"><?=h($draft['body']??'')?></textarea>
+        <button class="button primary full" type="submit" data-tutorial-target="session-save">セッションを終了してログ保存</button>
       </form>
     </div>
   </section>
@@ -31,4 +31,5 @@
 </main>
 <dialog id="tentative-event-dialog" class="dialog compact-dialog"><form method="post" class="form-stack" data-tentative-form><div class="section-head"><h2>面接仮日程を登録</h2><button class="icon-button" type="button" data-dialog-close>×</button></div><input type="hidden" name="csrf_token" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="add_tentative_event"><label>予定名<input class="field" name="title" value="<?=h(($interview['company']['name']??'').' 面接仮日程')?>" required></label><label>開始日時<input class="field" type="datetime-local" name="start_at" data-tentative-start required></label><label>終了日時<input class="field" type="datetime-local" name="end_at" data-tentative-end required></label><button class="button primary full" type="submit">仮予定として登録</button></form></dialog>
 <script src="assets/js/interview.js" defer></script>
+<?php if($tutorialStage==='session')require __DIR__.'/partials/tutorial_session.php';?>
 <?php require __DIR__.'/layout/end.php'; ?>

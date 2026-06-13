@@ -16,14 +16,14 @@ final class CareerRepository {
     $deadlines = $this->all(
       "SELECT * FROM (
         SELECT a.application_id item_id,a.title,a.deadline_at,c.company_id,c.name company_name,'応募' item_type FROM applications a JOIN companies c ON c.company_id=a.company_id WHERE a.user_id=? AND a.rejected=0 AND a.deadline_at IS NOT NULL
-        UNION ALL SELECT f.step_id,f.title,f.deadline_at,c.company_id,c.name,'選考' FROM flow_steps f JOIN applications a ON a.application_id=f.application_id JOIN companies c ON c.company_id=a.company_id WHERE f.user_id=? AND f.status<>'done' AND f.deadline_at IS NOT NULL
+        UNION ALL SELECT f.step_id,f.title,f.deadline_at,c.company_id,c.name,'選考' FROM flow_steps f JOIN companies c ON c.company_id=f.company_id WHERE f.user_id=? AND f.status<>'done' AND f.deadline_at IS NOT NULL
         UNION ALL SELECT t.task_id,t.title,t.due_at,c.company_id,c.name,'タスク' FROM tasks t LEFT JOIN companies c ON c.company_id=t.company_id WHERE t.user_id=? AND t.done=0 AND t.hidden=0 AND t.due_at IS NOT NULL
        ) deadlines ORDER BY deadline_at LIMIT 8", [$uid,$uid,$uid]
     );
     $nextSteps = $this->all(
       "SELECT f.*,a.title application_title,c.company_id,c.name company_name
-       FROM flow_steps f JOIN applications a ON a.application_id=f.application_id
-       JOIN companies c ON c.company_id=a.company_id
+       FROM flow_steps f LEFT JOIN applications a ON a.application_id=f.application_id
+       JOIN companies c ON c.company_id=f.company_id
        WHERE f.user_id=? AND f.status<>'done'
        ORDER BY COALESCE(f.scheduled_at,f.deadline_at,'9999-12-31'),f.sort_order LIMIT 8", [$uid]
     );
@@ -62,13 +62,13 @@ final class CareerRepository {
     );
   }
 
-  public function companies(int $uid, string $query = ''): array {
+  public function companies(int $uid, string $query = '', bool $archived = false): array {
     $sql = "SELECT c.*,i.name industry_name,
       (SELECT COUNT(*) FROM applications ac WHERE ac.company_id=c.company_id) application_count,
       (SELECT MIN(ad.deadline_at) FROM applications ad WHERE ad.company_id=c.company_id AND ad.rejected=0) next_deadline
       FROM companies c LEFT JOIN industries i ON i.industry_id=c.industry_id
-      WHERE c.user_id=? AND c.archived=0";
-    $params = [$uid];
+      WHERE c.user_id=? AND c.archived=?";
+    $params = [$uid,$archived?1:0];
     if ($query !== '') {
       $sql .= ' AND (c.name LIKE ? OR c.business LIKE ?)';
       $params[] = "%{$query}%"; $params[] = "%{$query}%";
@@ -88,11 +88,11 @@ final class CareerRepository {
        LEFT JOIN job_categories j ON j.job_category_id=a.job_category_id
        LEFT JOIN interest_levels l ON l.interest_level_id=a.interest_level_id
        LEFT JOIN agents ag ON ag.agent_id=a.agent_id
-       WHERE a.user_id=? AND a.company_id=? ORDER BY a.rejected,a.updated_at DESC", [$uid,$companyId]
+       WHERE a.user_id=? AND a.company_id=? ORDER BY a.archived,a.rejected,a.updated_at DESC", [$uid,$companyId]
     );
     $steps = $this->all(
-      "SELECT f.*,a.title application_title FROM flow_steps f JOIN applications a ON a.application_id=f.application_id
-       WHERE f.user_id=? AND a.company_id=? ORDER BY a.application_id,f.sort_order,f.step_id", [$uid,$companyId]
+      "SELECT f.*,a.title application_title FROM flow_steps f LEFT JOIN applications a ON a.application_id=f.application_id
+       WHERE f.user_id=? AND f.company_id=? ORDER BY f.application_id,f.sort_order,f.step_id", [$uid,$companyId]
     );
     $contents = $this->all("SELECT * FROM contents WHERE user_id=? AND (company_id=? OR company_id IS NULL) ORDER BY category,sort_order,updated_at DESC", [$uid,$companyId]);
     $notes = $this->all("SELECT * FROM notes WHERE user_id=? AND company_id=? ORDER BY updated_at DESC LIMIT 20", [$uid,$companyId]);
@@ -147,21 +147,40 @@ final class CareerRepository {
   }
 
   public function addStep(int $uid, int $applicationId, array $input): void {
-    $owned=$this->one('SELECT application_id FROM applications WHERE application_id=? AND user_id=?',[$applicationId,$uid]);
-    if (!$owned) throw new RuntimeException('応募案件が見つかりません。');
-    $stmt=$this->pdo->prepare("INSERT INTO flow_steps (user_id,application_id,title,step_type,status,sort_order,scheduled_at,deadline_at,url,memo) SELECT ?,?,?,?,'todo',COALESCE(MAX(sort_order)+10,0),?,?,?,? FROM flow_steps WHERE application_id=?");
-    $stmt->execute([$uid,$applicationId,$input['title'],$input['step_type'],$input['scheduled_at'],$input['deadline_at'],$input['url'],$input['memo'],$applicationId]);
+    $applicationId=$applicationId>0?$applicationId:null;
+    $companyId=(int)($input['company_id']??0);
+    if($applicationId){
+      $owned=$this->one('SELECT company_id FROM applications WHERE application_id=? AND user_id=?',[$applicationId,$uid]);
+      if(!$owned)throw new RuntimeException('応募案件が見つかりません。');
+      $companyId=(int)$owned['company_id'];
+    }
+    if(!$this->company($uid,$companyId))throw new RuntimeException('企業が見つかりません。');
+    $stmt=$this->pdo->prepare("INSERT INTO flow_steps (user_id,company_id,application_id,title,step_type,status,sort_order,scheduled_at,deadline_at,url,memo) SELECT ?,?,?,?,?,'todo',COALESCE(MAX(sort_order)+10,0),?,?,?,? FROM flow_steps WHERE company_id=? AND application_id<=>?");
+    $stmt->execute([$uid,$companyId,$applicationId,$input['title'],$input['step_type'],$input['scheduled_at'],$input['deadline_at'],$input['url'],$input['memo'],$companyId,$applicationId]);
+    $stepId=(int)$this->pdo->lastInsertId();
+    if($input['scheduled_at'])$this->pdo->prepare("INSERT INTO events (user_id,company_id,application_id,step_id,event_type,schedule_status,title,start_at,end_at) VALUES (?,?,?,?,?,'confirmed',?,?,DATE_ADD(?,INTERVAL 60 MINUTE))")->execute([$uid,$companyId,$applicationId,$stepId,$input['step_type'],$input['title'],$input['scheduled_at'],$input['scheduled_at']]);
+    if($input['deadline_at'])$this->pdo->prepare("INSERT INTO tasks (user_id,company_id,application_id,step_id,title,due_at) VALUES (?,?,?,?,?,?)")->execute([$uid,$companyId,$applicationId,$stepId,$input['title'].' 締切',$input['deadline_at']]);
   }
 
   public function updateStepStatus(int $uid, int $stepId, string $status): void {
     $stmt=$this->pdo->prepare('UPDATE flow_steps SET status=? WHERE step_id=? AND user_id=?');
     $stmt->execute([$status,$stepId,$uid]);
+    if($status==='done')$this->pdo->prepare('UPDATE tasks SET done=1 WHERE step_id=? AND user_id=?')->execute([$stepId,$uid]);
   }
 
   public function addNote(int $uid, int $companyId, array $input): void {
-    $input['application_id']=$this->ownedApplication($uid,$companyId,$input['application_id']);
-    $stmt=$this->pdo->prepare('INSERT INTO notes (user_id,company_id,application_id,category,title,body) VALUES (?,?,?,?,?,?)');
-    $stmt->execute([$uid,$companyId,$input['application_id'],$input['category'],$input['title'],$input['body']]);
+    $companyId=$companyId>0?$companyId:null;
+    if(!empty($input['application_id'])){
+      $owned=$this->one('SELECT company_id FROM applications WHERE application_id=? AND user_id=?',[(int)$input['application_id'],$uid]);
+      if(!$owned)throw new RuntimeException('応募案件が見つかりません。');
+      $companyId=(int)$owned['company_id'];
+    }
+    if($companyId&&!$this->company($uid,$companyId))throw new RuntimeException('企業が見つかりません。');
+    $input['application_id']=$companyId?$this->ownedApplication($uid,$companyId,$input['application_id']):null;
+    $scope=$companyId?'linked':'common';
+    $stmt=$this->pdo->prepare('INSERT INTO notes (user_id,company_id,application_id,category,title,body,interview_visible,note_scope) VALUES (?,?,?,?,?,?,?,?)');
+    $stmt->execute([$uid,$companyId,$input['application_id'],$input['category']?:'unset',$input['title'],$input['body'],!empty($input['interview_visible'])?1:0,$scope]);
+    $this->syncNoteTags($uid,(int)$this->pdo->lastInsertId(),$input['tag_ids']??[]);
   }
 
   public function addContent(int $uid, int $companyId, array $input): void {
@@ -260,10 +279,52 @@ final class CareerRepository {
 
   public function interview(int $uid, ?int $companyId, ?int $applicationId): array {
     $company=$companyId ? $this->company($uid,$companyId) : null;
-    $contents=$this->all("SELECT * FROM contents WHERE user_id=? AND interview_visible=1 AND (company_id IS NULL OR company_id=?) AND (application_id IS NULL OR application_id=?) ORDER BY category,sort_order",[$uid,$companyId,$applicationId]);
+    $contents=$this->all("SELECT note_id content_id,category,title,body,application_id,company_id FROM notes WHERE user_id=? AND deleted_at IS NULL AND interview_visible=1 AND (company_id IS NULL OR company_id=?) AND (? IS NULL OR application_id IS NULL OR application_id=?) ORDER BY updated_at DESC",[$uid,$companyId,$applicationId,$applicationId]);
     $scope=$applicationId ? 'application:'.$applicationId : ($companyId ? 'company:'.$companyId : 'global');
     $draft=$this->one('SELECT * FROM interview_drafts WHERE user_id=? AND draft_scope=?',[$uid,$scope]);
     return compact('company','contents','draft');
+  }
+
+  public function notes(int $uid,string $query='',bool $trash=false): array {
+    $sql="SELECT n.*,c.name company_name,a.title application_title,
+      GROUP_CONCAT(DISTINCT t.name ORDER BY t.sort_order SEPARATOR ', ') tag_names
+      FROM notes n LEFT JOIN companies c ON c.company_id=n.company_id
+      LEFT JOIN applications a ON a.application_id=n.application_id
+      LEFT JOIN note_tag_links l ON l.note_id=n.note_id LEFT JOIN note_tags t ON t.tag_id=l.tag_id
+      WHERE n.user_id=? AND n.deleted_at IS ".($trash?'NOT NULL':'NULL');
+    $params=[$uid];
+    if($query!==''){$sql.=" AND (n.title LIKE ? OR n.body LIKE ? OR c.name LIKE ? OR a.title LIKE ? OR t.name LIKE ?)";for($i=0;$i<5;$i++)$params[]="%{$query}%";}
+    $sql.=" GROUP BY n.note_id ORDER BY n.updated_at DESC";
+    return $this->all($sql,$params);
+  }
+
+  public function noteTags(int $uid): array { return $this->all('SELECT * FROM note_tags WHERE user_id=? ORDER BY sort_order,name',[$uid]); }
+
+  public function updateNote(int $uid,int $noteId,array $input): void {
+    $note=$this->one('SELECT * FROM notes WHERE note_id=? AND user_id=?',[$noteId,$uid]);
+    if(!$note)throw new RuntimeException('メモが見つかりません。');
+    $ownsTransaction=!$this->pdo->inTransaction();
+    if($ownsTransaction)$this->pdo->beginTransaction();
+    try{
+      $this->pdo->prepare('INSERT INTO note_versions (user_id,note_id,title,body,reason) VALUES (?,?,?,?,?)')->execute([$uid,$noteId,$note['title'],$note['body'],'save']);
+      $this->pdo->prepare('UPDATE notes SET title=?,body=?,interview_visible=?,deleted_at=NULL WHERE note_id=? AND user_id=?')->execute([$input['title'],$input['body'],!empty($input['interview_visible'])?1:0,$noteId,$uid]);
+      $this->syncNoteTags($uid,$noteId,$input['tag_ids']??[]);
+      $this->pdo->prepare("DELETE FROM note_versions WHERE note_id=? AND version_id NOT IN (SELECT version_id FROM (SELECT version_id FROM note_versions WHERE note_id=? ORDER BY created_at DESC,version_id DESC LIMIT 50) recent)")->execute([$noteId,$noteId]);
+      if($ownsTransaction)$this->pdo->commit();
+    }catch(Throwable $e){if($ownsTransaction&&$this->pdo->inTransaction())$this->pdo->rollBack();throw $e;}
+  }
+
+  public function trashNote(int $uid,int $noteId): void { $this->pdo->prepare('UPDATE notes SET deleted_at=NOW() WHERE note_id=? AND user_id=?')->execute([$noteId,$uid]); }
+  public function restoreNote(int $uid,int $noteId): void { $this->pdo->prepare('UPDATE notes SET deleted_at=NULL WHERE note_id=? AND user_id=?')->execute([$noteId,$uid]); }
+
+  public function setCompanyArchived(int $uid,int $companyId,bool $archived): void {
+    $this->pdo->prepare('UPDATE companies SET archived=? WHERE company_id=? AND user_id=?')->execute([$archived?1:0,$companyId,$uid]);
+    $this->recordState($uid,'company',$companyId,$archived?'archive':'restore',$archived?'過去企業へ移動':'通常企業へ復元');
+  }
+
+  public function setApplicationArchived(int $uid,int $applicationId,bool $archived): void {
+    $this->pdo->prepare('UPDATE applications SET archived=? WHERE application_id=? AND user_id=?')->execute([$archived?1:0,$applicationId,$uid]);
+    $this->recordState($uid,'application',$applicationId,$archived?'archive':'restore',$archived?'応募案件をアーカイブ':'応募案件を復元');
   }
 
   public function saveDraft(int $uid, ?int $companyId, ?int $applicationId, string $title, string $body): int {
@@ -309,5 +370,13 @@ final class CareerRepository {
     $row=$this->one('SELECT application_id FROM applications WHERE application_id=? AND user_id=? AND company_id=?',[$applicationId,$uid,$companyId]);
     if (!$row) throw new RuntimeException('応募案件が見つかりません。');
     return $applicationId;
+  }
+  private function syncNoteTags(int $uid,int $noteId,array $tagIds): void {
+    $this->pdo->prepare('DELETE FROM note_tag_links WHERE note_id=?')->execute([$noteId]);
+    $stmt=$this->pdo->prepare('INSERT INTO note_tag_links (note_id,tag_id) SELECT ?,tag_id FROM note_tags WHERE tag_id=? AND user_id=?');
+    foreach($tagIds as $tagId)if((int)$tagId>0)$stmt->execute([$noteId,(int)$tagId,$uid]);
+  }
+  private function recordState(int $uid,string $type,int $id,string $action,string $summary): void {
+    $this->pdo->prepare('INSERT INTO state_history (user_id,entity_type,entity_id,action,summary) VALUES (?,?,?,?,?)')->execute([$uid,$type,$id,$action,$summary]);
   }
 }

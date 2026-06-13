@@ -6,7 +6,8 @@ $flashes = consume_flashes();
 $links = [
   ['index.php','ホーム','dashboard'],
   ['companyFile.php','企業・応募','companies'],
-  ['campe.php','面接モード','interview'],
+  ['notes.php','メモ・カンペ','notes'],
+  ['campe.php','セッションモード','interview'],
 ];
 ?>
 <header class="app-header">

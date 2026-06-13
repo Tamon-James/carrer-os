@@ -177,4 +177,44 @@ function ensure_user_defaults(int $uid): void {
     $insert = $pdo->prepare("INSERT INTO {$table} (user_id, name, sort_order) VALUES (?, ?, ?)");
     foreach ($names as $index => $name) $insert->execute([$uid, $name, $index * 10]);
   }
+  foreach ([
+    'note_tags'=>['企業研究','説明会','志望動機','逆質問','自己PR','ガクチカ','面接練習'],
+    'session_types'=>['企業面接','エージェント面談','面接練習','説明会','就活相談'],
+  ] as $table=>$names) {
+    try {
+      $check=$pdo->prepare("SELECT COUNT(*) FROM {$table} WHERE user_id=?");
+      $check->execute([$uid]);
+      if((int)$check->fetchColumn()>0)continue;
+      $insert=$pdo->prepare("INSERT INTO {$table} (user_id,name,sort_order) VALUES (?,?,?)");
+      foreach($names as $index=>$name)$insert->execute([$uid,$name,($index+1)*10]);
+    } catch(PDOException) {
+      // Allows login before the optional operations-v2 migration is applied.
+    }
+  }
+}
+
+function delete_tutorial_data(int $uid): void {
+  $pdo=db();
+  $ownsTransaction=!$pdo->inTransaction();
+  if($ownsTransaction)$pdo->beginTransaction();
+  try{
+    $stmt=$pdo->prepare("SELECT entity_id FROM tutorial_records WHERE user_id=? AND entity_type='company'");
+    $stmt->execute([$uid]);
+    $companyIds=array_map('intval',$stmt->fetchAll(PDO::FETCH_COLUMN));
+    $deleteCompany=$pdo->prepare('DELETE FROM companies WHERE company_id=? AND user_id=?');
+    foreach($companyIds as $companyId)$deleteCompany->execute([$companyId,$uid]);
+    $pdo->prepare('DELETE FROM tutorial_records WHERE user_id=?')->execute([$uid]);
+    if($ownsTransaction)$pdo->commit();
+  }catch(Throwable $e){
+    if($ownsTransaction&&$pdo->inTransaction())$pdo->rollBack();
+    throw $e;
+  }
+}
+
+function purge_expired_text_trash(int $uid): void {
+  try {
+    db()->prepare("DELETE FROM notes WHERE user_id=? AND deleted_at IS NOT NULL AND deleted_at<DATE_SUB(NOW(),INTERVAL 30 DAY)")->execute([$uid]);
+  } catch(PDOException) {
+    // The trash feature is available after migration 003.
+  }
 }

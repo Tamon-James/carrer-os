@@ -26,6 +26,8 @@
 
 DB構造: [database/ER_DIAGRAM.md](database/ER_DIAGRAM.md)
 
+既存ユーザーデータを保持したOperations V2移行: [database/OPERATIONS_V2_MIGRATION.md](database/OPERATIONS_V2_MIGRATION.md)
+
 ## セットアップ
 
 ### 1. データベースを作成する
